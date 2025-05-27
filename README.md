@@ -48,7 +48,7 @@ This fork allows Claude Max subscribers to use their subscription in GitHub Acti
 1. Install the Claude GitHub app to your repository: https://github.com/apps/claude
 2. Get your OAuth credentials from your Claude Max subscription:
    - Make sure you are logged in with your Claude Max in claude with `/login`
-   - Find your access token, refresh token and expires at in `~/.claude/.credentials.json`
+   - Find your access token, refresh token and expires at in `~/.claude/.credentials.json` (ubuntu) or by search claude -> show password in KeyChain (macOS)
 3. Add the following secrets to your repository:
    - `CLAUDE_ACCESS_TOKEN`: Your Claude OAuth access token
    - `CLAUDE_REFRESH_TOKEN`: Your Claude OAuth refresh token
