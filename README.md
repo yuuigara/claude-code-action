@@ -4,6 +4,8 @@
 
 **This is a fork of the official Claude Code Action that adds support for OAuth authentication, allowing Claude Max subscribers to use their subscription in GitHub Actions.**
 
+**How to use this fork**: https://grll.bearblog.dev/use-claude-github-actions-with-claude-max/
+
 A general-purpose [Claude Code](https://claude.ai/code) action for GitHub PRs and issues that can answer questions and implement code changes. This action listens for a trigger phrase in comments and activates Claude act on the request. It supports multiple authentication methods including:
 - **OAuth authentication for Claude Max subscribers** (new in this fork)
 - Anthropic direct API
