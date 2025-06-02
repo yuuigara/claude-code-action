@@ -9,8 +9,8 @@ import {
   formatComments,
   formatReviewComments,
   formatChangedFilesWithSHA,
-  stripHtmlComments,
 } from "../github/data/formatter";
+import { sanitizeContent } from "../github/utils/sanitizer";
 import {
   isIssuesEvent,
   isIssueCommentEvent,
@@ -58,10 +58,27 @@ export function buildAllowedToolsString(
 
 export function buildDisallowedToolsString(
   customDisallowedTools?: string,
+  allowedTools?: string,
 ): string {
-  let allDisallowedTools = DISALLOWED_TOOLS.join(",");
+  let disallowedTools = [...DISALLOWED_TOOLS];
+
+  // If user has explicitly allowed some hardcoded disallowed tools, remove them from disallowed list
+  if (allowedTools) {
+    const allowedToolsArray = allowedTools
+      .split(",")
+      .map((tool) => tool.trim());
+    disallowedTools = disallowedTools.filter(
+      (tool) => !allowedToolsArray.includes(tool),
+    );
+  }
+
+  let allDisallowedTools = disallowedTools.join(",");
   if (customDisallowedTools) {
-    allDisallowedTools = `${allDisallowedTools},${customDisallowedTools}`;
+    if (allDisallowedTools) {
+      allDisallowedTools = `${allDisallowedTools},${customDisallowedTools}`;
+    } else {
+      allDisallowedTools = customDisallowedTools;
+    }
   }
   return allDisallowedTools;
 }
@@ -69,7 +86,7 @@ export function buildDisallowedToolsString(
 export function prepareContext(
   context: ParsedGitHubContext,
   claudeCommentId: string,
-  defaultBranch?: string,
+  baseBranch?: string,
   claudeBranch?: string,
 ): PreparedContext {
   const repository = context.repository.full_name;
@@ -147,7 +164,7 @@ export function prepareContext(
         ...(commentId && { commentId }),
         commentBody,
         ...(claudeBranch && { claudeBranch }),
-        ...(defaultBranch && { defaultBranch }),
+        ...(baseBranch && { baseBranch }),
       };
       break;
 
@@ -169,7 +186,7 @@ export function prepareContext(
         prNumber,
         commentBody,
         ...(claudeBranch && { claudeBranch }),
-        ...(defaultBranch && { defaultBranch }),
+        ...(baseBranch && { baseBranch }),
       };
       break;
 
@@ -194,13 +211,13 @@ export function prepareContext(
           prNumber,
           commentBody,
           ...(claudeBranch && { claudeBranch }),
-          ...(defaultBranch && { defaultBranch }),
+          ...(baseBranch && { baseBranch }),
         };
         break;
       } else if (!claudeBranch) {
         throw new Error("CLAUDE_BRANCH is required for issue_comment event");
-      } else if (!defaultBranch) {
-        throw new Error("DEFAULT_BRANCH is required for issue_comment event");
+      } else if (!baseBranch) {
+        throw new Error("BASE_BRANCH is required for issue_comment event");
       } else if (!issueNumber) {
         throw new Error(
           "ISSUE_NUMBER is required for issue_comment event for issues",
@@ -212,7 +229,7 @@ export function prepareContext(
         commentId,
         isPR: false,
         claudeBranch: claudeBranch,
-        defaultBranch,
+        baseBranch,
         issueNumber,
         commentBody,
       };
@@ -228,8 +245,8 @@ export function prepareContext(
       if (isPR) {
         throw new Error("IS_PR must be false for issues event");
       }
-      if (!defaultBranch) {
-        throw new Error("DEFAULT_BRANCH is required for issues event");
+      if (!baseBranch) {
+        throw new Error("BASE_BRANCH is required for issues event");
       }
       if (!claudeBranch) {
         throw new Error("CLAUDE_BRANCH is required for issues event");
@@ -246,7 +263,7 @@ export function prepareContext(
           eventAction: "assigned",
           isPR: false,
           issueNumber,
-          defaultBranch,
+          baseBranch,
           claudeBranch,
           assigneeTrigger,
         };
@@ -256,7 +273,7 @@ export function prepareContext(
           eventAction: "opened",
           isPR: false,
           issueNumber,
-          defaultBranch,
+          baseBranch,
           claudeBranch,
         };
       } else {
@@ -277,7 +294,7 @@ export function prepareContext(
         isPR: true,
         prNumber,
         ...(claudeBranch && { claudeBranch }),
-        ...(defaultBranch && { defaultBranch }),
+        ...(baseBranch && { baseBranch }),
       };
       break;
 
@@ -419,14 +436,14 @@ ${
     eventData.eventName === "pull_request_review") &&
   eventData.commentBody
     ? `<trigger_comment>
-${stripHtmlComments(eventData.commentBody)}
+${sanitizeContent(eventData.commentBody)}
 </trigger_comment>`
     : ""
 }
 ${
   context.directPrompt
     ? `<direct_prompt>
-${stripHtmlComments(context.directPrompt)}
+${sanitizeContent(context.directPrompt)}
 </direct_prompt>`
     : ""
 }
@@ -524,13 +541,13 @@ ${context.directPrompt ? `   - DIRECT INSTRUCTION: A direct instruction was prov
       ${
         eventData.claudeBranch
           ? `- Provide a URL to create a PR manually in this format:
-        [Create a PR](${GITHUB_SERVER_URL}/${context.repository}/compare/${eventData.defaultBranch}...<branch-name>?quick_pull=1&title=<url-encoded-title>&body=<url-encoded-body>)
+        [Create a PR](${GITHUB_SERVER_URL}/${context.repository}/compare/${eventData.baseBranch}...<branch-name>?quick_pull=1&title=<url-encoded-title>&body=<url-encoded-body>)
         - IMPORTANT: Use THREE dots (...) between branch names, not two (..)
           Example: ${GITHUB_SERVER_URL}/${context.repository}/compare/main...feature-branch (correct)
           NOT: ${GITHUB_SERVER_URL}/${context.repository}/compare/main..feature-branch (incorrect)
         - IMPORTANT: Ensure all URL parameters are properly encoded - spaces should be encoded as %20, not left as spaces
           Example: Instead of "fix: update welcome message", use "fix%3A%20update%20welcome%20message"
-        - The target-branch should be '${eventData.defaultBranch}'.
+        - The target-branch should be '${eventData.baseBranch}'.
         - The branch-name is the current branch: ${eventData.claudeBranch}
         - The body should include:
           - A clear description of the changes
@@ -594,6 +611,11 @@ What You CANNOT Do:
 - Execute commands outside the repository context
 - Run arbitrary Bash commands (unless explicitly allowed via allowed_tools configuration)
 - Perform branch operations (cannot merge branches, rebase, or perform other git operations beyond pushing commits)
+- Modify files in the .github/workflows directory (GitHub App permissions do not allow workflow modifications)
+- View CI/CD results or workflow run outputs (cannot access GitHub Actions logs or test results)
+
+When users ask you to perform actions you cannot do, politely explain the limitation and, when applicable, direct them to the FAQ for more information and workarounds:
+"I'm unable to [specific action] due to [reason]. You can find more information and potential workarounds in the [FAQ](https://github.com/anthropics/claude-code-action/blob/main/FAQ.md)."
 
 If a user asks for something outside these capabilities (and you have no other tools provided), politely explain that you cannot perform that action and suggest an alternative approach if possible.
 
@@ -615,7 +637,7 @@ f. If you are unable to complete certain steps, such as running a linter or test
 
 export async function createPrompt(
   claudeCommentId: number,
-  defaultBranch: string | undefined,
+  baseBranch: string | undefined,
   claudeBranch: string | undefined,
   githubData: FetchDataResult,
   context: ParsedGitHubContext,
@@ -624,7 +646,7 @@ export async function createPrompt(
     const preparedContext = prepareContext(
       context,
       claudeCommentId.toString(),
-      defaultBranch,
+      baseBranch,
       claudeBranch,
     );
 
@@ -648,6 +670,7 @@ export async function createPrompt(
     );
     const allDisallowedTools = buildDisallowedToolsString(
       preparedContext.disallowedTools,
+      preparedContext.allowedTools,
     );
 
     core.exportVariable("ALLOWED_TOOLS", allAllowedTools);
