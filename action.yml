@@ -1,5 +1,5 @@
-name: "Claude Max Code Action (OAuth Fork)"
-description: "Fork of Claude Code Action that supports OAuth authentication for Claude Max subscribers."
+name: "Claude Code Action with OAuth"
+description: "Enhanced Claude Code Action supporting OAuth authentication for Claude Pro / Max subscribers, plus API key, AWS Bedrock, and Google Vertex AI."
 branding:
   icon: "at-sign"
   color: "orange"
